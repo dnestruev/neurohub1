@@ -23,26 +23,40 @@ SETTINGS_DIR = Path.home() / ".neurohub"
 SETTINGS_FILE = SETTINGS_DIR / "desktop-settings.json"
 
 MODEL_PRESETS = [
-    ("openai", "GPT-4o mini", "gpt-4o-mini"),
-    ("openai", "GPT-4.1", "gpt-4.1"),
-    ("anthropic", "Claude Sonnet", "claude-3-5-sonnet-20241022"),
-    ("deepseek", "DeepSeek Chat", "deepseek-chat"),
-    ("groq", "Groq Llama", "llama-3.3-70b-versatile"),
-    ("gemini", "Gemini Flash", "gemini-2.0-flash"),
+    ("openai", "GPT-4o mini", "gpt-4o-mini", "⚡"),
+    ("openai", "GPT-4.1", "gpt-4.1", "✦"),
+    ("anthropic", "Claude Sonnet", "claude-3-5-sonnet-20241022", "✹"),
+    ("deepseek", "DeepSeek", "deepseek-chat", "◆"),
+    ("groq", "Groq Llama", "llama-3.3-70b-versatile", "●"),
+    ("gemini", "Gemini Flash", "gemini-2.0-flash", "✧"),
+]
+
+SUGGESTIONS = [
+    "Сделай план проекта",
+    "Объясни ошибку в коде",
+    "Напиши красивый README",
+    "Сравни модели для задачи",
 ]
 
 COLORS = {
-    "bg": "#f7f7f8",
-    "panel": "#ffffff",
-    "panel_soft": "#f2f4f7",
+    "app": "#f6f7fb",
+    "surface": "#ffffff",
+    "surface_2": "#f1f4f8",
+    "sidebar": "#101827",
+    "sidebar_2": "#172033",
     "text": "#111827",
-    "muted": "#6b7280",
-    "border": "#e5e7eb",
+    "text_inverse": "#f9fafb",
+    "muted": "#667085",
+    "muted_inverse": "#a7b0c0",
+    "border": "#e6e8ef",
     "accent": "#10a37f",
-    "accent_soft": "#e7f8f2",
+    "accent_2": "#0ea5e9",
+    "accent_soft": "#e8f8f2",
     "danger": "#dc2626",
-    "user": "#eef2ff",
+    "danger_soft": "#fff1f2",
+    "user": "#eef4ff",
     "assistant": "#ffffff",
+    "code": "#0f172a",
 }
 
 
@@ -140,20 +154,51 @@ def _extract_error_detail(response: httpx.Response) -> str:
     return str(data)[:300]
 
 
+class ScrollFrame(tk.Frame):
+    """Scrollable frame for chat messages."""
+
+    def __init__(self, parent: tk.Widget, *, bg: str) -> None:
+        super().__init__(parent, bg=bg)
+        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
+        self.inner = tk.Frame(self.canvas, bg=bg)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.window_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        self.inner.bind("<Configure>", self._on_inner_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_inner_configure(self, _event: tk.Event[Any]) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event: tk.Event[Any]) -> None:
+        self.canvas.itemconfigure(self.window_id, width=event.width)
+
+    def _on_mousewheel(self, event: tk.Event[Any]) -> None:
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def scroll_to_bottom(self) -> None:
+        self.update_idletasks()
+        self.canvas.yview_moveto(1.0)
+
+
 class NeuroHubDesktop(tk.Tk):
-    """Native Tkinter desktop chat application."""
+    """Native desktop chat application with a modern app shell."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("NeuroHub — Native AI Chat")
-        self.geometry("1080x720")
-        self.minsize(840, 560)
-        self.configure(bg=COLORS["bg"])
+        self.title("NeuroHub — Desktop AI Workspace")
+        self.geometry("1180x760")
+        self.minsize(980, 640)
+        self.configure(bg=COLORS["app"])
 
         self.settings = load_desktop_settings()
         self.messages: list[ChatMessage] = []
         self.result_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.is_busy = False
+        self.chat_title_var = tk.StringVar(value="Новый чат")
 
         self._setup_style()
         self._build_layout()
@@ -163,166 +208,205 @@ class NeuroHubDesktop(tk.Tk):
     def _setup_style(self) -> None:
         style = ttk.Style(self)
         style.theme_use("clam")
-        style.configure("TFrame", background=COLORS["bg"])
-        style.configure("Card.TFrame", background=COLORS["panel"], relief="flat")
-        style.configure("TLabel", background=COLORS["bg"], foreground=COLORS["text"])
-        style.configure("Muted.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
-        style.configure("Accent.TButton", padding=(16, 9), background=COLORS["accent"])
-        style.configure("Chip.TButton", padding=(12, 7), background=COLORS["panel"])
+        style.configure("Vertical.TScrollbar", background=COLORS["surface_2"], troughcolor=COLORS["app"])
+        style.configure("TCombobox", padding=8)
 
     def _build_layout(self) -> None:
-        shell = tk.Frame(self, bg=COLORS["bg"])
-        shell.pack(fill="both", expand=True, padx=28, pady=24)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
+        self._build_sidebar()
+        self._build_main()
 
-        header = tk.Frame(shell, bg=COLORS["bg"])
-        header.pack(fill="x")
-        tk.Label(header, text="✣", font=("Segoe UI", 38, "bold"), bg=COLORS["bg"]).pack()
+    def _build_sidebar(self) -> None:
+        sidebar = tk.Frame(self, bg=COLORS["sidebar"], width=252)
+        sidebar.grid(row=0, column=0, sticky="ns")
+        sidebar.grid_propagate(False)
+
+        brand = tk.Frame(sidebar, bg=COLORS["sidebar"], padx=20, pady=22)
+        brand.pack(fill="x")
         tk.Label(
-            header,
-            text="How can I help you today?",
-            font=("Segoe UI", 22, "bold"),
-            bg=COLORS["bg"],
-            fg=COLORS["text"],
-        ).pack(pady=(0, 18))
+            brand,
+            text="✣",
+            width=2,
+            bg=COLORS["accent"],
+            fg="#ffffff",
+            font=("Segoe UI", 18, "bold"),
+        ).pack(side="left")
+        title = tk.Frame(brand, bg=COLORS["sidebar"])
+        title.pack(side="left", padx=12)
+        tk.Label(title, text="NeuroHub", bg=COLORS["sidebar"], fg=COLORS["text_inverse"], font=("Segoe UI", 15, "bold")).pack(anchor="w")
+        tk.Label(title, text="AI workspace", bg=COLORS["sidebar"], fg=COLORS["muted_inverse"], font=("Segoe UI", 9)).pack(anchor="w")
 
-        self.chip_row = tk.Frame(shell, bg=COLORS["bg"])
-        self.chip_row.pack(fill="x", pady=(0, 16))
-        for provider, label, model in MODEL_PRESETS:
-            self._make_chip(self.chip_row, provider, label, model).pack(side="left", padx=(0, 8))
         tk.Button(
-            self.chip_row,
-            text="API keys",
-            command=self._open_settings_dialog,
+            sidebar,
+            text="＋  New chat",
+            command=self._new_chat,
             relief="flat",
-            bg=COLORS["panel"],
+            bg=COLORS["accent"],
+            fg="#ffffff",
+            activebackground="#0e8f70",
+            padx=18,
+            pady=11,
+            anchor="w",
+        ).pack(fill="x", padx=18, pady=(8, 18))
+
+        tk.Label(sidebar, text="MODELS", bg=COLORS["sidebar"], fg=COLORS["muted_inverse"], font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=20)
+        self.model_list = tk.Frame(sidebar, bg=COLORS["sidebar"], padx=14, pady=8)
+        self.model_list.pack(fill="x")
+        self._rebuild_model_list()
+
+        bottom = tk.Frame(sidebar, bg=COLORS["sidebar"], padx=18, pady=18)
+        bottom.pack(side="bottom", fill="x")
+        tk.Button(bottom, text="⚙  API keys", command=self._open_settings_dialog, relief="flat", bg=COLORS["sidebar_2"], fg=COLORS["text_inverse"], padx=14, pady=10, anchor="w").pack(fill="x", pady=(0, 8))
+        tk.Button(bottom, text="↧  Export JSON", command=self._export_chat, relief="flat", bg=COLORS["sidebar_2"], fg=COLORS["text_inverse"], padx=14, pady=10, anchor="w").pack(fill="x")
+
+    def _build_main(self) -> None:
+        main = tk.Frame(self, bg=COLORS["app"])
+        main.grid(row=0, column=1, sticky="nsew")
+        main.rowconfigure(1, weight=1)
+        main.columnconfigure(0, weight=1)
+
+        topbar = tk.Frame(main, bg=COLORS["app"], padx=28, pady=18)
+        topbar.grid(row=0, column=0, sticky="ew")
+        tk.Entry(
+            topbar,
+            textvariable=self.chat_title_var,
+            relief="flat",
+            bg=COLORS["app"],
             fg=COLORS["text"],
+            font=("Segoe UI", 16, "bold"),
+            width=28,
+        ).pack(side="left")
+        self.status_pill = tk.Label(
+            topbar,
+            text=self._status_text(),
+            bg=COLORS["accent_soft"],
+            fg=COLORS["accent"],
             padx=14,
-            pady=8,
-        ).pack(side="right")
-
-        chat_card = tk.Frame(shell, bg=COLORS["panel"], highlightbackground=COLORS["border"], highlightthickness=1)
-        chat_card.pack(fill="both", expand=True)
-
-        self.chat = tk.Text(
-            chat_card,
-            wrap="word",
-            relief="flat",
-            bg=COLORS["panel"],
-            fg=COLORS["text"],
-            padx=24,
-            pady=20,
-            state="disabled",
-            font=("Segoe UI", 11),
+            pady=7,
+            font=("Segoe UI", 9, "bold"),
         )
-        self.chat.pack(fill="both", expand=True)
-        self._configure_chat_tags()
+        self.status_pill.pack(side="right")
 
-        composer = tk.Frame(chat_card, bg=COLORS["panel"], padx=14, pady=14)
-        composer.pack(fill="x")
-        self.prompt = tk.Text(
-            composer,
-            height=3,
-            wrap="word",
-            relief="flat",
-            bg=COLORS["panel_soft"],
-            fg=COLORS["text"],
+        self.messages_frame = ScrollFrame(main, bg=COLORS["app"])
+        self.messages_frame.grid(row=1, column=0, sticky="nsew", padx=28)
+
+        self._build_composer(main)
+
+    def _build_composer(self, parent: tk.Widget) -> None:
+        composer_outer = tk.Frame(parent, bg=COLORS["app"], padx=28, pady=(14, 24))
+        composer_outer.grid(row=2, column=0, sticky="ew")
+        composer_outer.columnconfigure(0, weight=1)
+
+        composer = tk.Frame(
+            composer_outer,
+            bg=COLORS["surface"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1,
             padx=14,
             pady=12,
-            font=("Segoe UI", 11),
         )
-        self.prompt.pack(side="left", fill="x", expand=True, padx=(0, 12))
+        composer.grid(row=0, column=0, sticky="ew")
+        composer.columnconfigure(0, weight=1)
+
+        tools = tk.Frame(composer, bg=COLORS["surface"])
+        tools.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self._tool_button(tools, "📎 Attach").pack(side="left", padx=(0, 8))
+        self._tool_button(tools, "🔭 Deep research").pack(side="left", padx=(0, 8))
+        self._tool_button(tools, "🎨 Create image").pack(side="left")
+        tk.Label(tools, text="Ctrl+Enter to send", bg=COLORS["surface"], fg=COLORS["muted"], font=("Segoe UI", 9)).pack(side="right")
+
+        self.prompt = tk.Text(
+            composer,
+            height=4,
+            wrap="word",
+            relief="flat",
+            bg=COLORS["surface"],
+            fg=COLORS["text"],
+            insertbackground=COLORS["accent"],
+            padx=4,
+            pady=4,
+            font=("Segoe UI", 12),
+        )
+        self.prompt.grid(row=1, column=0, sticky="ew", padx=(0, 12))
         self.prompt.bind("<Control-Return>", lambda _event: self._send_message())
         self.prompt.bind("<Command-Return>", lambda _event: self._send_message())
 
-        actions = tk.Frame(composer, bg=COLORS["panel"])
-        actions.pack(side="right", fill="y")
-        tk.Button(actions, text="New", command=self._new_chat, relief="flat", padx=12, pady=7).pack(
-            fill="x", pady=(0, 7)
-        )
-        tk.Button(actions, text="Export", command=self._export_chat, relief="flat", padx=12, pady=7).pack(
-            fill="x", pady=(0, 7)
-        )
         self.send_button = tk.Button(
-            actions,
-            text="Send ↵",
+            composer,
+            text="➤",
             command=self._send_message,
             relief="flat",
             bg=COLORS["text"],
             fg="#ffffff",
-            padx=18,
-            pady=11,
+            activebackground="#000000",
+            width=4,
+            height=2,
+            font=("Segoe UI", 13, "bold"),
         )
-        self.send_button.pack(fill="x")
+        self.send_button.grid(row=1, column=1, sticky="se")
 
-        self.status = tk.Label(
-            shell,
-            text=self._status_text(),
-            bg=COLORS["bg"],
-            fg=COLORS["muted"],
-            anchor="w",
-        )
-        self.status.pack(fill="x", pady=(10, 0))
+    def _tool_button(self, parent: tk.Widget, text: str) -> tk.Button:
+        return tk.Button(parent, text=text, relief="flat", bg=COLORS["surface_2"], fg=COLORS["muted"], padx=10, pady=6)
 
-    def _make_chip(self, parent: tk.Widget, provider: str, label: str, model: str) -> tk.Button:
-        selected = self.settings.provider == provider and self.settings.model == model
-        return tk.Button(
-            parent,
-            text=label,
-            command=lambda: self._select_model(provider, model),
-            relief="flat",
-            bg=COLORS["accent_soft"] if selected else COLORS["panel"],
-            fg=COLORS["accent"] if selected else COLORS["muted"],
-            activebackground=COLORS["accent_soft"],
-            padx=13,
-            pady=8,
-        )
-
-    def _configure_chat_tags(self) -> None:
-        self.chat.tag_configure("center", justify="center", spacing3=10)
-        self.chat.tag_configure("muted", foreground=COLORS["muted"])
-        self.chat.tag_configure("user", lmargin1=180, lmargin2=180, rmargin=20, spacing3=12)
-        self.chat.tag_configure("assistant", lmargin1=20, lmargin2=20, rmargin=180, spacing3=12)
-        self.chat.tag_configure("role", foreground=COLORS["muted"], font=("Segoe UI", 9, "bold"))
-        self.chat.tag_configure("heading", font=("Segoe UI", 15, "bold"), spacing1=10, spacing3=6)
-        self.chat.tag_configure("code", font=("Consolas", 10), background="#f3f4f6", lmargin1=36)
-        self.chat.tag_configure("error", foreground=COLORS["danger"])
+    def _rebuild_model_list(self) -> None:
+        for child in self.model_list.winfo_children():
+            child.destroy()
+        for provider, label, model, icon in MODEL_PRESETS:
+            selected = self.settings.provider == provider and self.settings.model == model
+            tk.Button(
+                self.model_list,
+                text=f"{icon}  {label}",
+                command=lambda next_provider=provider, next_model=model: self._select_model(next_provider, next_model),
+                relief="flat",
+                bg=COLORS["accent_soft"] if selected else COLORS["sidebar"],
+                fg=COLORS["accent"] if selected else COLORS["muted_inverse"],
+                activebackground=COLORS["sidebar_2"],
+                padx=12,
+                pady=9,
+                anchor="w",
+                font=("Segoe UI", 10, "bold" if selected else "normal"),
+            ).pack(fill="x", pady=3)
 
     def _render_welcome(self) -> None:
-        self._with_chat_editable(lambda: self._insert_welcome())
+        self._clear_messages_ui()
+        hero = tk.Frame(self.messages_frame.inner, bg=COLORS["app"])
+        hero.pack(fill="both", expand=True, pady=(70, 20))
+        tk.Label(hero, text="✣", bg=COLORS["app"], fg=COLORS["text"], font=("Segoe UI", 42, "bold")).pack()
+        tk.Label(hero, text="How can I help you today?", bg=COLORS["app"], fg=COLORS["text"], font=("Segoe UI", 24, "bold")).pack(pady=(8, 8))
+        tk.Label(hero, text="Выбери модель слева, добавь ключ в API keys и начни диалог.", bg=COLORS["app"], fg=COLORS["muted"], font=("Segoe UI", 11)).pack()
+        chips = tk.Frame(hero, bg=COLORS["app"])
+        chips.pack(pady=24)
+        for suggestion in SUGGESTIONS:
+            tk.Button(
+                chips,
+                text=suggestion,
+                command=lambda value=suggestion: self._use_suggestion(value),
+                relief="flat",
+                bg=COLORS["surface"],
+                fg=COLORS["text"],
+                padx=14,
+                pady=9,
+                highlightbackground=COLORS["border"],
+                highlightthickness=1,
+            ).pack(side="left", padx=6)
 
-    def _insert_welcome(self) -> None:
-        self.chat.delete("1.0", "end")
-        self.chat.insert("end", "NeuroHub\n", ("center", "heading"))
-        self.chat.insert(
-            "end",
-            "Выбери модель, добавь API ключ через кнопку API keys и напиши сообщение.\n\n",
-            ("center", "muted"),
-        )
-        self.chat.insert("end", "Поддерживаются Markdown, кодовые блоки и экспорт истории в JSON.", "center")
+    def _use_suggestion(self, text: str) -> None:
+        self.prompt.delete("1.0", "end")
+        self.prompt.insert("1.0", text)
+        self.prompt.focus_set()
+
+    def _clear_messages_ui(self) -> None:
+        for child in self.messages_frame.inner.winfo_children():
+            child.destroy()
 
     def _select_model(self, provider: str, model: str) -> None:
         self.settings.provider = provider
         self.settings.model = model
         self.settings.base_url = DEFAULT_BASE_URLS.get(provider, "")
-        self.status.configure(text=self._status_text())
+        self._refresh_status()
         save_desktop_settings(self.settings)
-        self._rebuild_chips()
-
-    def _rebuild_chips(self) -> None:
-        for child in self.chip_row.winfo_children():
-            child.destroy()
-        for provider, label, model in MODEL_PRESETS:
-            self._make_chip(self.chip_row, provider, label, model).pack(side="left", padx=(0, 8))
-        tk.Button(
-            self.chip_row,
-            text="API keys",
-            command=self._open_settings_dialog,
-            relief="flat",
-            bg=COLORS["panel"],
-            fg=COLORS["text"],
-            padx=14,
-            pady=8,
-        ).pack(side="right")
+        self._rebuild_model_list()
 
     def _open_settings_dialog(self) -> None:
         SettingsDialog(self, self.settings, self._apply_settings)
@@ -330,14 +414,14 @@ class NeuroHubDesktop(tk.Tk):
     def _apply_settings(self, settings: DesktopSettings) -> None:
         self.settings = settings
         save_desktop_settings(settings)
-        self.status.configure(text=self._status_text())
-        self._rebuild_chips()
+        self._refresh_status()
+        self._rebuild_model_list()
 
     def _new_chat(self) -> None:
         self.messages.clear()
+        self.chat_title_var.set("Новый чат")
         self._render_welcome()
-        self.status.configure(text="Новый чат готов")
-
+        self._refresh_status("Новый чат готов")
 
     def _export_chat(self) -> None:
         if not self.messages:
@@ -352,7 +436,7 @@ class NeuroHubDesktop(tk.Tk):
             return
         payload = [message.as_dict() for message in self.messages]
         Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.status.configure(text=f"Чат сохранён: {path}")
+        self._refresh_status(f"Чат сохранён: {path}")
 
     def _send_message(self) -> None:
         if self.is_busy:
@@ -366,10 +450,13 @@ class NeuroHubDesktop(tk.Tk):
             messagebox.showerror(APP_NAME, str(exc))
             return
 
+        if not self.messages:
+            self._clear_messages_ui()
+            self.chat_title_var.set(text[:48] + ("…" if len(text) > 48 else ""))
         self.prompt.delete("1.0", "end")
         user_message = ChatMessage("user", text)
         self.messages.append(user_message)
-        self._append_message("Ты", text, "user")
+        self._append_message("Ты", text, is_user=True)
         self._set_busy(True, "Думаю...")
 
         thread = threading.Thread(target=self._ask_in_background, args=(config, list(self.messages)), daemon=True)
@@ -396,10 +483,10 @@ class NeuroHubDesktop(tk.Tk):
 
         if kind == "answer":
             self.messages.append(ChatMessage("assistant", str(payload)))
-            self._append_message("NeuroHub", str(payload), "assistant", markdown=True)
+            self._append_message("NeuroHub", str(payload), is_user=False, markdown=True)
             self._set_busy(False, self._status_text())
         else:
-            self._append_message("Ошибка", str(payload), "assistant", error=True)
+            self._append_message("Ошибка", str(payload), is_user=False, error=True)
             self._set_busy(False, "Исправь настройки и попробуй снова")
         self.after(120, self._poll_result_queue)
 
@@ -407,33 +494,46 @@ class NeuroHubDesktop(tk.Tk):
         self,
         role: str,
         content: str,
-        tag: str,
         *,
+        is_user: bool,
         markdown: bool = False,
         error: bool = False,
     ) -> None:
-        def insert() -> None:
-            if len(self.messages) == 1 and role == "Ты":
-                self.chat.delete("1.0", "end")
-            self.chat.insert("end", f"{role}\n", (tag, "role"))
-            if error:
-                self.chat.insert("end", f"{content}\n\n", (tag, "error"))
-            elif markdown:
-                self._insert_markdown(content, tag)
-            else:
-                self.chat.insert("end", f"{content}\n\n", tag)
-            self.chat.see("end")
+        row = tk.Frame(self.messages_frame.inner, bg=COLORS["app"])
+        row.pack(fill="x", pady=9, padx=18)
 
-        self._with_chat_editable(insert)
+        bubble = tk.Frame(
+            row,
+            bg=COLORS["danger_soft"] if error else COLORS["user"] if is_user else COLORS["assistant"],
+            highlightbackground="#fecdd3" if error else COLORS["border"],
+            highlightthickness=1,
+            padx=16,
+            pady=12,
+        )
+        bubble.pack(side="right" if is_user else "left", anchor="e" if is_user else "w", padx=(180, 0) if is_user else (0, 180))
+        tk.Label(bubble, text=role, bg=bubble["bg"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        if markdown:
+            self._insert_markdown_widgets(bubble, content)
+        else:
+            tk.Label(
+                bubble,
+                text=content,
+                bg=bubble["bg"],
+                fg=COLORS["danger"] if error else COLORS["text"],
+                justify="left",
+                wraplength=660,
+                font=("Segoe UI", 11),
+            ).pack(anchor="w", pady=(4, 0))
+        self.messages_frame.scroll_to_bottom()
 
-    def _insert_markdown(self, content: str, base_tag: str) -> None:
+    def _insert_markdown_widgets(self, parent: tk.Frame, content: str) -> None:
         in_code = False
         code_lines: list[str] = []
-        for raw_line in content.splitlines():
+        for raw_line in content.splitlines() or [content]:
             line = raw_line.rstrip()
             if line.startswith("```"):
                 if in_code:
-                    self.chat.insert("end", "\n".join(code_lines) + "\n", (base_tag, "code"))
+                    self._markdown_label(parent, "\n".join(code_lines), code=True)
                     code_lines.clear()
                 in_code = not in_code
                 continue
@@ -441,26 +541,39 @@ class NeuroHubDesktop(tk.Tk):
                 code_lines.append(line)
                 continue
             if line.startswith("# "):
-                self.chat.insert("end", line[2:] + "\n", (base_tag, "heading"))
+                self._markdown_label(parent, line[2:], heading=True)
             elif line.startswith("## "):
-                self.chat.insert("end", line[3:] + "\n", (base_tag, "heading"))
+                self._markdown_label(parent, line[3:], heading=True)
             elif line.startswith(("- ", "* ")):
-                self.chat.insert("end", "• " + line[2:] + "\n", base_tag)
-            else:
-                self.chat.insert("end", line + "\n", base_tag)
+                self._markdown_label(parent, "• " + line[2:])
+            elif line:
+                self._markdown_label(parent, line)
         if code_lines:
-            self.chat.insert("end", "\n".join(code_lines) + "\n", (base_tag, "code"))
-        self.chat.insert("end", "\n", base_tag)
+            self._markdown_label(parent, "\n".join(code_lines), code=True)
 
-    def _with_chat_editable(self, callback: Any) -> None:
-        self.chat.configure(state="normal")
-        callback()
-        self.chat.configure(state="disabled")
+    def _markdown_label(self, parent: tk.Frame, text: str, *, heading: bool = False, code: bool = False) -> None:
+        bg = COLORS["code"] if code else parent["bg"]
+        fg = "#e5e7eb" if code else COLORS["text"]
+        font = ("Consolas", 10) if code else ("Segoe UI", 13, "bold") if heading else ("Segoe UI", 11)
+        tk.Label(
+            parent,
+            text=text,
+            bg=bg,
+            fg=fg,
+            justify="left",
+            wraplength=660,
+            font=font,
+            padx=10 if code else 0,
+            pady=8 if code else 2,
+        ).pack(anchor="w", fill="x" if code else "none", pady=(5 if heading or code else 1, 0))
 
     def _set_busy(self, busy: bool, status: str) -> None:
         self.is_busy = busy
-        self.send_button.configure(text="Thinking..." if busy else "Send ↵", state="disabled" if busy else "normal")
-        self.status.configure(text=status)
+        self.send_button.configure(text="…" if busy else "➤", state="disabled" if busy else "normal")
+        self._refresh_status(status)
+
+    def _refresh_status(self, text: str | None = None) -> None:
+        self.status_pill.configure(text=text or self._status_text())
 
     def _status_text(self) -> str:
         return f"{self.settings.provider} · {self.settings.model}"
@@ -472,7 +585,8 @@ class SettingsDialog(tk.Toplevel):
     def __init__(self, parent: NeuroHubDesktop, settings: DesktopSettings, on_save: Any) -> None:
         super().__init__(parent)
         self.title("NeuroHub settings")
-        self.configure(bg=COLORS["bg"])
+        self.configure(bg=COLORS["app"])
+        self.geometry("520x390")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -496,62 +610,34 @@ class SettingsDialog(tk.Toplevel):
         self.wait_window(self)
 
     def _build(self) -> None:
-        card = tk.Frame(self, bg=COLORS["panel"], padx=22, pady=20)
-        card.pack(fill="both", expand=True, padx=18, pady=18)
-        tk.Label(
-            card,
-            text="API keys & provider",
-            bg=COLORS["panel"],
-            fg=COLORS["text"],
-            font=("Segoe UI", 16, "bold"),
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 14))
+        card = tk.Frame(self, bg=COLORS["surface"], padx=24, pady=22, highlightbackground=COLORS["border"], highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=20, pady=20)
+        tk.Label(card, text="API keys & provider", bg=COLORS["surface"], fg=COLORS["text"], font=("Segoe UI", 18, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
 
         self._label(card, "Провайдер", 1)
         provider_box = ttk.Combobox(card, textvariable=self.provider_var, values=sorted(API_KEY_ENV), state="readonly")
-        provider_box.grid(row=1, column=1, sticky="ew", pady=6)
+        provider_box.grid(row=1, column=1, sticky="ew", pady=7)
 
         self._label(card, "API ключ", 2)
-        tk.Entry(card, textvariable=self.api_key_var, show="•", width=44).grid(
-            row=2, column=1, sticky="ew", pady=6
-        )
+        tk.Entry(card, textvariable=self.api_key_var, show="•", width=44, relief="flat", bg=COLORS["surface_2"], fg=COLORS["text"]).grid(row=2, column=1, sticky="ew", pady=7, ipady=8)
 
-        tk.Checkbutton(
-            card,
-            text="Сохранить ключ локально на этом ПК",
-            variable=self.remember_var,
-            bg=COLORS["panel"],
-            fg=COLORS["muted"],
-            activebackground=COLORS["panel"],
-        ).grid(row=3, column=1, sticky="w", pady=(0, 8))
+        tk.Checkbutton(card, text="Сохранить ключ локально на этом ПК", variable=self.remember_var, bg=COLORS["surface"], fg=COLORS["muted"], activebackground=COLORS["surface"]).grid(row=3, column=1, sticky="w", pady=(0, 8))
 
         self._label(card, "Модель", 4)
-        tk.Entry(card, textvariable=self.model_var, width=44).grid(row=4, column=1, sticky="ew", pady=6)
+        tk.Entry(card, textvariable=self.model_var, width=44, relief="flat", bg=COLORS["surface_2"], fg=COLORS["text"]).grid(row=4, column=1, sticky="ew", pady=7, ipady=8)
 
         self._label(card, "Base URL", 5)
-        tk.Entry(card, textvariable=self.base_url_var, width=44).grid(row=5, column=1, sticky="ew", pady=6)
+        tk.Entry(card, textvariable=self.base_url_var, width=44, relief="flat", bg=COLORS["surface_2"], fg=COLORS["text"]).grid(row=5, column=1, sticky="ew", pady=7, ipady=8)
 
-        buttons = tk.Frame(card, bg=COLORS["panel"])
-        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(16, 0))
-        tk.Button(buttons, text="Cancel", command=self.destroy, relief="flat", padx=14, pady=8).pack(
-            side="left", padx=(0, 8)
-        )
-        tk.Button(
-            buttons,
-            text="Save",
-            command=self._save,
-            relief="flat",
-            bg=COLORS["accent"],
-            fg="#ffffff",
-            padx=18,
-            pady=8,
-        ).pack(side="left")
+        buttons = tk.Frame(card, bg=COLORS["surface"])
+        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(18, 0))
+        tk.Button(buttons, text="Cancel", command=self.destroy, relief="flat", bg=COLORS["surface_2"], padx=16, pady=9).pack(side="left", padx=(0, 8))
+        tk.Button(buttons, text="Save", command=self._save, relief="flat", bg=COLORS["accent"], fg="#ffffff", padx=20, pady=9).pack(side="left")
         card.columnconfigure(1, weight=1)
 
     @staticmethod
     def _label(parent: tk.Widget, text: str, row: int) -> None:
-        tk.Label(parent, text=text, bg=COLORS["panel"], fg=COLORS["muted"]).grid(
-            row=row, column=0, sticky="w", padx=(0, 16), pady=6
-        )
+        tk.Label(parent, text=text, bg=COLORS["surface"], fg=COLORS["muted"]).grid(row=row, column=0, sticky="w", padx=(0, 16), pady=7)
 
     def _on_provider_change(self) -> None:
         provider = self.provider_var.get()
@@ -571,7 +657,6 @@ class SettingsDialog(tk.Toplevel):
             remember_keys=self.remember_var.get(),
         )
         try:
-            # Validate everything except key presence, so a user can save a provider draft.
             if next_settings.base_url:
                 validate_url(next_settings.base_url, name="Base URL")
         except ValueError as exc:
