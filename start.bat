@@ -1,12 +1,12 @@
 @echo off
 chcp 65001 >nul
-title NeuroHub — Web App
+title NeuroHub — Desktop App
 cd /d "%~dp0"
 
 echo.
 echo  ╔══════════════════════════════════════╗
-echo  ║        NeuroHub — Web App            ║
-echo  ║   ключи, Markdown, красивый чат       ║
+echo  ║       NeuroHub — Desktop App         ║
+echo  ║   настоящее окно, ключи, Markdown     ║
 echo  ╚══════════════════════════════════════╝
 echo.
 
@@ -29,9 +29,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo Открываю NeuroHub в браузере...
-echo Если браузер не открылся, смотри адрес ниже.
+echo Запускаю NeuroHub Desktop...
 echo.
-python -m neurohub.web_app
+python -m neurohub.desktop_app
 
 pause

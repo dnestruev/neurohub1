@@ -24,8 +24,9 @@ dependencies = [
 dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "ruff>=0.4.0"]
 
 [project.scripts]
-neurohub = "neurohub.web_app:main"
-neurohub-app = "neurohub.web_app:main"
+neurohub = "neurohub.desktop_app:main"
+neurohub-desktop = "neurohub.desktop_app:main"
+neurohub-web = "neurohub.web_app:main"
 neurohub-cli = "neurohub.cli:main"
 
 [tool.hatch.build.targets.wheel]
