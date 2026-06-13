@@ -1,13 +1,13 @@
-# NeuroHub — запуск двойным кликом на start.bat
-# Или в PowerShell: .\start.ps1
+# NeuroHub — локальное web-приложение
+# Запуск: .\start.ps1 или двойной клик по start.bat
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Write-Host ""
-Write-Host "  NeuroHub — AI Chat" -ForegroundColor Cyan
-Write-Host "  OpenRouter | OpenAI | Claude | Gemini" -ForegroundColor DarkGray
+Write-Host "  NeuroHub — Web App" -ForegroundColor Cyan
+Write-Host "  ключи, Markdown, красивый чат" -ForegroundColor DarkGray
 Write-Host ""
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -17,12 +17,13 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Host "Устанавливаю зависимости..." -ForegroundColor DarkGray
+Write-Host "Устанавливаю/обновляю приложение..." -ForegroundColor DarkGray
 python -m pip install -e . -q
 
 Write-Host ""
-Write-Host "Запускаю NeuroHub..." -ForegroundColor Green
+Write-Host "Открываю NeuroHub в браузере..." -ForegroundColor Green
+Write-Host "Если браузер не открылся, смотри адрес ниже." -ForegroundColor DarkGray
 Write-Host ""
-python -m neurohub
+python -m neurohub.web_app
 
 Read-Host "`nНажми Enter для выхода"

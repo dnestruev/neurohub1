@@ -1,12 +1,12 @@
 @echo off
 chcp 65001 >nul
-title NeuroHub — AI Chat
+title NeuroHub — Web App
 cd /d "%~dp0"
 
 echo.
 echo  ╔══════════════════════════════════════╗
-echo  ║         NeuroHub — AI Chat           ║
-echo  ║   OpenRouter ^| OpenAI ^| Claude       ║
+echo  ║        NeuroHub — Web App            ║
+echo  ║   ключи, Markdown, красивый чат       ║
 echo  ╚══════════════════════════════════════╝
 echo.
 
@@ -19,12 +19,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Устанавливаю зависимости...
+echo Устанавливаю/обновляю приложение...
 python -m pip install -e . -q
+if errorlevel 1 (
+    echo.
+    echo [ОШИБКА] Не удалось установить зависимости.
+    pause
+    exit /b 1
+)
 
 echo.
-echo Запускаю NeuroHub...
+echo Открываю NeuroHub в браузере...
+echo Если браузер не открылся, смотри адрес ниже.
 echo.
-python -m neurohub
+python -m neurohub.web_app
 
 pause
