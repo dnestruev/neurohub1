@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NeuroHub</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="settings-card">
+      <div class="brand">
+        <div class="brand-mark">NH</div>
+        <div>
+          <h1>NeuroHub</h1>
+          <p>Красивый локальный чат с нейросетями</p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Провайдер</span>
+        <select id="provider"></select>
+      </label>
+
+      <label class="field">
+        <span>API ключ</span>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Вставь ключ сюда" />
+      </label>
+
+      <label class="check-row">
+        <input id="rememberKey" type="checkbox" />
+        <span>Сохранить ключ только в этом браузере</span>
+      </label>
+
+      <label class="field">
+        <span>Модель</span>
+        <input id="model" type="text" placeholder="gpt-4o-mini" />
+      </label>
+
+      <label class="field">
+        <span>Base URL <small>(обычно не трогать)</small></span>
+        <input id="baseUrl" type="url" placeholder="https://api.openai.com/v1" />
+      </label>
+
+      <div class="button-row">
+        <button id="saveSettings" class="primary" type="button">Сохранить</button>
+        <button id="clearSettings" type="button">Очистить</button>
+      </div>
+
+      <div class="hint">
+        <strong>Важно:</strong> ключ не пишется в репозиторий и не сохраняется на сервере.
+        Если включить галочку, он останется только в localStorage браузера.
+      </div>
+    </aside>
+
+    <main class="chat-card">
+      <header class="chat-header">
+        <div>
+          <h2>Чат</h2>
+          <p id="status">Готов к работе</p>
+        </div>
+        <div class="button-row compact">
+          <button id="newChat" type="button">Новый чат</button>
+          <button id="exportChat" type="button">Экспорт</button>
+        </div>
+      </header>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <form id="chatForm" class="composer">
+        <textarea id="prompt" rows="3" placeholder="Напиши сообщение... Markdown в ответах отрисуется красиво."></textarea>
+        <button id="send" class="send-button" type="submit">Отправить</button>
+      </form>
+    </main>
+  </div>
+
+  <template id="welcomeTemplate">
+    <div class="welcome">
+      <h2>Добро пожаловать 👋</h2>
+      <p>Выбери провайдера, вставь API ключ слева и отправь первое сообщение.</p>
+      <ul>
+        <li>Ошибки 401/403/429 показываются в интерфейсе, а не валят приложение.</li>
+        <li>Ответы поддерживают заголовки, списки, кодовые блоки и inline-code.</li>
+        <li>Чат можно экспортировать в JSON.</li>
+      </ul>
+    </div>
+  </template>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
